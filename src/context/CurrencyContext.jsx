@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 
@@ -26,7 +26,12 @@ const CurrencyProvider = ({ children }) => {
   const [amount, setAmount] = useState(1);
   const [amountInFromCurrency, setAmountInFromCurrency] = useState(true);
 
-  const currencyOptionsData = useQuery({
+
+  const {
+    data : currencyOptions, 
+    isLoading, 
+    isError
+  } = useQuery({
     queryKey: ['currencyOptions'],
     queryFn: async () => {
       const res = await fetch(`${BASE_URL}/symbols`, REQUEST_BODY);
@@ -34,14 +39,15 @@ const CurrencyProvider = ({ children }) => {
         throw new Error('Invalid Https Request');
       }
   
-      return res.json();
-    },
-    staleTime: 1000
+      const data = await res.json();
+
+      return Object.keys(data?.symbols)
+    }, 
+    staleTime: Infinity
   });
 
-  const currencyOptions = Object.keys(currencyOptionsData?.data?.symbols || {});
 
-  const exchangeRateData = useQuery({
+  const { data : exchangeRate } = useQuery({
     queryKey: [fromCurrency, toCurrency],
     queryFn: async () => {
       const res = await fetch(`${BASE_URL}/latest?base=${fromCurrency}&symbols=${toCurrency}`, REQUEST_BODY);
@@ -49,19 +55,20 @@ const CurrencyProvider = ({ children }) => {
         throw new Error('Invalid Https Request');
       }
 
-      return res.json();
-    },
-    staleTime: Infinity
+      const data = await res.json();
+
+      return data?.rates[toCurrency];
+    }
   });
 
-  const exchangeRate = exchangeRateData?.data?.rates[toCurrency]
-  let fromAmount = amountInFromCurrency ? amount : '';
-  let toAmount = amountInFromCurrency ? '' : amount;
 
-  if (exchangeRate) {
-    fromAmount = amountInFromCurrency ? amount : amount / exchangeRate;
-    toAmount = amountInFromCurrency ? amount * exchangeRate : amount;
-  }
+  const fromAmount = useMemo(() => {
+    return amountInFromCurrency ? amount : amount / exchangeRate;
+  },  [amount, amountInFromCurrency, exchangeRate]);
+
+  const toAmount = useMemo(() => {
+    return amountInFromCurrency ? amount * exchangeRate : amount;
+  }, [amount, amountInFromCurrency, exchangeRate]);
 
 
   const handleFromCurrencySelect = (currency) => {
@@ -78,14 +85,13 @@ const CurrencyProvider = ({ children }) => {
   };
 
   const handleToAmountChange = (amount) => {
-    console.log(amount);
     setAmount(amount);
     setAmountInFromCurrency(false);
   };
   
   const context = {
-    isLoading : currencyOptionsData?.isLoading,
-    isError: currencyOptions?.isError,
+    isLoading,
+    isError,
     currencyOptions,
     fromAmount,
     fromCurrency,
